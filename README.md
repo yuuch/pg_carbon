@@ -1,85 +1,66 @@
-# pg_carbon
+# pg_carbon: A Next-Generation Optimizer for PostgreSQL
 
-A Cascades-style Cost-Based Optimizer (CBO) extension for PostgreSQL. `pg_carbon` is designed to provide an alternative query optimization path using the Cascades framework, allowing for more extensible and potentially efficient query planning.
+**pg_carbon** is an experimental, extensible query optimizer extension for PostgreSQL, inspired by the state-of-the-art **Columbia** and **Cascades** optimizer frameworks.
 
-![Architecture](img/carbon_arch.png)
+![arch](./img/carbon_arch.png)
 
+It integrates seamlessly with PostgreSQL, replacing or augmenting the default planner to provide a robust platform for advanced query optimization research and development.
 
-## Prerequisites
+## 🚀 Key Features
 
-Before building `pg_carbon`, ensure you have the following installed:
+- **Cascades/Columbia Architecture**: Implements a top-down, rule-based optimization strategy using a sophisticated task scheduling system (`O_Group`, `E_Group`, `O_Expr`, `Apply_Rule`, `O_Inputs`).
+- **Memoization**: Efficiently stores and manages groups of equivalent logical and physical expressions (the "Memo") to prune redundant work and ensure optimal sub-problem caching.
+- **Rule-Based Transformation**: Separation of logical transformations (exploration) and physical implementations, allowing for easy addition of new optimization rules.
+- **PostgreSQL Integration**: Built as a standard PostgreSQL extension. It hooks into the query processing pipeline to intercept and optimize queries while leveraging PostgreSQL's execution engine.
 
-*   **PostgreSQL**: (Development headers and libraries required)
-*   **Meson**: (>= 0.57.0)
-*   **Ninja**: Build system
+## 🛠️ Build and Installation
 
-## Installation
+pg_carbon comes with a standalone build script using the Meson build system.
 
-`pg_carbon` uses the Meson build system. Follow these steps to compile and install the extension:
+### Prerequisites
+- A PostgreSQL installation (source or binaries).
+- `meson` and `ninja`.
+- C++17 compatible compiler.
 
-1.  **Setup the build directory:**
+### Building
 
-    ```bash
-    meson setup build
-    ```
+Navigate to the extension directory and run the build script:
 
-    If `pg_config` is not in your PATH, you may need to specify it:
-
-    ```bash
-    meson setup build -Dpg_config=/path/to/pg_config
-    ```
-
-2.  **Compile the extension:**
-
-    ```bash
-    cd build
-    ninja
-    ```
-
-3.  **Install:**
-
-    ```bash
-    ninja install
-    ```
-
-## Usage
-
-### Configuration
-
-To enable `pg_carbon`, you need to load it as a shared library.
-
-1.  Add `pg_carbon` to `shared_preload_libraries` in your `postgresql.conf`:
-
-    ```ini
-    shared_preload_libraries = 'pg_carbon'
-    ```
-
-2.  Restart your PostgreSQL server.
-
-### Loading the Extension
-
-Connect to your database and create the extension:
-
-```sql
-CREATE EXTENSION pg_carbon;
+```bash
+cd contrib/pg_carbon
+./build.sh
 ```
 
-### Options
+This script will:
+1. Locate your PostgreSQL installation (using `pg_config`).
+2. Compile the extension.
+3. Install the extension artifacts (`.so`/`.dylib`, control file, SQL script) into your PostgreSQL directories.
 
-`pg_carbon` provides GUC (Grand Unified Configuration) variables to control its behavior:
+## 📦 Usage
 
-*   `pg_carbon.enable` (boolean): Enables or disables the `pg_carbon` optimizer. Default is `on`.
+To enable pg_carbon in your database:
 
-    ```sql
-    -- Disable pg_carbon for the current session
-    SET pg_carbon.enable = off;
-    ```
+1. Connect to your PostgreSQL database:
+   ```bash
+   psql postgres
+   ```
 
-## How it works
+2. Create the extension:
+   ```sql
+   CREATE EXTENSION pg_carbon;
+   ```
 
-When enabled, `pg_carbon` hooks into the PostgreSQL planner. It attempts to optimize the query using its Cascades-style engine. If `pg_carbon` cannot handle a specific query or if optimization fails (currently, the optimizer is a stub that always returns `NULL`), it gracefully falls back to the standard PostgreSQL planner, ensuring query execution functionality is preserved.
+3. (Optional) Load it explicitly if not in `shared_preload_libraries`:
+   ```sql
+   LOAD 'pg_carbon';
+   ```
 
-## License
+Once loaded, `pg_carbon` works behind the scenes. When a query is submitted, `pg_carbon` intercepts the parse tree, optimizes it using its internal engine, converts the result back into a PostgreSQL `Plan`, and hands it off to the executor.
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+## 🤝 Relationship with PostgreSQL
 
+pg_carbon is designed to coexist with the standard PostgreSQL planner. It demonstrates how "pluggable optimizers" can be realized in the PostgreSQL ecosystem. While it currently provides a skeleton and core architectural components (Scheduler, Memo, Rules), it aims to eventually support a wide range of SQL features with superior optimization capabilities for complex workload patterns.
+
+## 📄 License
+
+pg_carbon is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for more details.
