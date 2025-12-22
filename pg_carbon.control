@@ -1,4 +1,4 @@
-comment = 'pg_carbon: Cascades-based optimizer for PostgreSQL'
-default_version = '0.0.1'
+comment = 'Carbon-style query optimizer for PostgreSQL'
+default_version = '1.0'
 module_pathname = '$libdir/pg_carbon'
 relocatable = true
