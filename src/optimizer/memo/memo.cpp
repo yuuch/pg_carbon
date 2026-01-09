@@ -56,16 +56,16 @@ Group *Memo::InsertExpression(GroupExpression *expr) {
     return group;
 }
 
-Group *Memo::InitMemo(Operator *root_op) {
-    if (!root_op)
+Group *Memo::InitMemo(Expression *root_expr) {
+    if (!root_expr)
         return nullptr;
 
     PgVector<Group *> child_groups;
-    for (auto *input : root_op->GetInputs()) {
-        child_groups.push_back(InitMemo(input));
+    for (auto *child_expr : root_expr->GetChildren()) {
+        child_groups.push_back(InitMemo(child_expr));
     }
 
-    auto expr = new GroupExpression(root_op, child_groups);
+    auto expr = new GroupExpression(root_expr->GetOperator(), child_groups);
     return InsertExpression(expr);
 }
 

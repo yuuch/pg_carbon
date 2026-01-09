@@ -75,6 +75,7 @@ private:
 class Group;
 class Memo;
 class Rule;
+class MetadataAccessor;
 
 class GroupExpression : public PgObject {
 public:
@@ -89,11 +90,15 @@ public:
     bool HasAppliedRule(Rule *rule) const;
     void AddAppliedRule(Rule *rule);
 
+    void SetCost(double cost) { cost_ = cost; }
+    double GetCost() const { return cost_; }
+
 private:
     Operator *op_;
     PgVector<Group *> children_;
     Group *group_;                 // Back pointer to the group this expression belongs to
     PgVector<bool> applied_rules_; // Bit vector for applied rules
+    double cost_ = 0.0;            // Cost of this expression (sum of children + local)
 };
 
 class LogicalProperties : public PgObject {
@@ -124,7 +129,15 @@ public:
     // For simplicity in this skeleton, we just store the best plan directly.
     // In a real optimizer, this would be a map of RequiredProperties -> Best
     // Plan.
-    void SetBestExpression(GroupExpression *expr) { best_expression_ = expr; }
+    void SetBestExpression(GroupExpression *expr) {
+        if (best_expression_ == nullptr) {
+            best_expression_ = expr;
+        } else {
+            if (expr->GetCost() < best_expression_->GetCost()) {
+                best_expression_ = expr;
+            }
+        }
+    }
     GroupExpression *GetBestExpression() const { return best_expression_; }
 
     void SetLogicalProperties(LogicalProperties *props) { logical_properties_ = props; }
@@ -145,7 +158,8 @@ class Memo : public PgObject {
 public:
     Group *CopyIn(Expression *expr);
     Group *InsertExpression(GroupExpression *expr);
-    Group *InitMemo(Operator *root_op);
+    // Initialize Memo from an initial Expression tree
+    Group *InitMemo(Expression *root_expr);
     Group *NewGroup(LogicalProperties *props = nullptr);
     const PgVector<Group *> &GetGroups() const { return groups_; }
 
@@ -162,9 +176,13 @@ public:
         return nullptr;
     }
 
+    void SetMetadataAccessor(MetadataAccessor *metadata) { metadata_ = metadata; }
+    MetadataAccessor *GetMetadataAccessor() const { return metadata_; }
+
 private:
     PgVector<Group *> groups_;
     PgVector<CarbonColumn *> columns_;
+    MetadataAccessor *metadata_ = nullptr;
     // In a real implementation, we would have a hash map to detect duplicate
     // expressions.
 };

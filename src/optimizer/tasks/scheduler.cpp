@@ -9,17 +9,15 @@ void TaskScheduler::ScheduleTask(Task *task) {
 void TaskScheduler::SetRules() {
     // Initialize rules (Simplification: just add one rule)
     if (rules_.empty()) {
-        rules_.push_back(new RuleGetToScan());
+        rules_.push_back(new RuleGetToSeqScan());
+        rules_.push_back(new RuleGetToIndexScan());
         rules_.push_back(new RuleFilterToPhysical());
 
         rules_.push_back(new RuleLimitToPhysical());
         rules_.push_back(new RuleProjectionToPhysical());
     }
 
-    // Assign IDs to rules
-    for (size_t i = 0; i < rules_.size(); ++i) {
-        rules_[i]->SetId(static_cast<int>(i));
-    }
+    // Assignments done in constructor
 }
 
 Task *TaskScheduler::GetTask() {

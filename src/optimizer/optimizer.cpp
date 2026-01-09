@@ -14,18 +14,25 @@ extern "C" {
 #include "utils/syscache.h"
 }
 
+#include "../metadata/metadata.h"
+#include "../operators/logical_filter.h"
+
 namespace pg_carbon {
 
 // Optimize: Carbon Operator Tree (Root) -> Best Carbon Physical Plan
-GroupExpression *Optimizer::Optimize(Expression *root_expr) {
+GroupExpression *Optimizer::Optimize(Expression *root_expr, Query *pg_query,
+                                     MetadataAccessor *metadata) {
     // 1. Initialize Memo with the expression tree
-    Group *root_group = memo_.CopyIn(root_expr);
+    memo_.SetMetadataAccessor(metadata);
+    metadata->SetQuery(pg_query);
+
+    // Copy Initial Plan to Memo
+    Group *root_group = memo_.InitMemo(root_expr);
 
     // 2. Initialize Scheduler
     TaskScheduler scheduler;
 
     // 3. Schedule optimization of the root group
-    // In a real system, we would pass required properties (e.g., sort order).
     Context *context = new Context(&memo_);
     scheduler.ScheduleTask(new OptGrp(root_group, context));
 
@@ -33,8 +40,6 @@ GroupExpression *Optimizer::Optimize(Expression *root_expr) {
     scheduler.Run();
 
     // 5. Extract best plan
-    // In a real system, we extract based on required properties.
-    // Here we just take the best expression stored in the group.
     auto best_expr = root_group->GetBestExpression();
 
     return best_expr;
@@ -57,7 +62,8 @@ Plan *pg_carbon_optimize_query(Query *parse, int cursorOptions, ParamListInfo bo
 
     // 2. Optimization
     pg_carbon::Optimizer optimizer;
-    pg_carbon::GroupExpression *best_plan = optimizer.Optimize(root_expr);
+    pg_carbon::MetadataAccessor metadata; // Instantiate on stack
+    pg_carbon::GroupExpression *best_plan = optimizer.Optimize(root_expr, parse, &metadata);
 
     if (!best_plan) {
         return nullptr;

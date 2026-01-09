@@ -3,13 +3,45 @@
 
 #include "../common/memory.h"
 
+extern "C" {
+#include "access/htup_details.h"
+#include "access/relation.h"
+#include "postgres.h"
+#include "utils/rel.h"
+}
+
 namespace pg_carbon {
+
+// Stats for a relation
+struct RelationStats {
+    double rows;
+    double pages;
+};
+
+// Stats for an index
+struct IndexStats {
+    double pages;
+    double tree_height;
+};
 
 class MetadataAccessor {
 public:
-    // Mock method to get table rows. In a real implementation, this would call
-    // PG's statistics API.
-    static double GetTableRows(Oid table_oid);
+    virtual ~MetadataAccessor() = default;
+
+    // Query Context
+    virtual void SetQuery(Query *query) { pg_query_ = query; }
+
+    // Table Stats
+    virtual RelationStats GetTableStats(Oid table_oid);
+
+    // Index Stats
+    virtual IndexStats GetIndexStats(Oid index_oid);
+
+    // Selectivity Estimation
+    virtual double GetSelectivity(const Node *quals, int range_table_index);
+
+private:
+    Query *pg_query_ = nullptr;
 };
 
 } // namespace pg_carbon

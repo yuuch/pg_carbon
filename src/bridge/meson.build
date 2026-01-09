@@ -1,1 +1,1 @@
-sources += files('lib.c')
+extension_sources = files('lib.c')

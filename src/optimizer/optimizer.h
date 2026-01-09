@@ -22,7 +22,7 @@ namespace pg_carbon {
 class Optimizer : public PgObject {
 public:
     // Optimize: Carbon Operator Tree (Root) -> Best Carbon Physical Plan
-    GroupExpression *Optimize(Expression *root_expr);
+    GroupExpression *Optimize(Expression *root_expr, Query *parse, MetadataAccessor *metadata);
 
     Memo *GetMemo() { return &memo_; }
 

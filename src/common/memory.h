@@ -67,11 +67,11 @@ public:
     }
 
     static void operator delete(void *ptr) { pfree(ptr); }
-    static void operator delete(void *ptr, MemoryContext ctx) { pfree(ptr); }
+    static void operator delete(void *ptr, MemoryContext /*ctx*/) { pfree(ptr); }
 
     // Placement new/delete
-    static void *operator new(std::size_t size, void *ptr) { return ptr; }
-    static void operator delete(void *ptr, void *voidptr2) {}
+    static void *operator new(std::size_t /*size*/, void *ptr) { return ptr; }
+    static void operator delete(void * /*ptr*/, void * /*voidptr2*/) {}
 
     virtual ~PgObject() = default;
 };

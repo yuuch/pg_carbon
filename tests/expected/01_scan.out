@@ -1,0 +1,56 @@
+LOAD 'pg_carbon';
+psql:01_scan.sql:1: WARNING:  pg_carbon loaded!
+SET pg_carbon.enable = on;
+SET client_min_messages = warning;
+-- Setup
+DROP TABLE IF EXISTS scan_test;
+CREATE TABLE scan_test (id int, val int);
+INSERT INTO scan_test SELECT i, i % 100 FROM generate_series(1, 100000) i;
+ANALYZE scan_test;
+-- Test 1: Seq Scan
+-- Without index, it must be Seq Scan
+EXPLAIN SELECT * FROM scan_test WHERE val = 50;
+psql:01_scan.sql:13: WARNING:  pg carbon generate plan success✅
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Seq Scan on scan_test  (cost=0.00..1445.51 rows=5 width=0)
+   Filter: (val = 50)
+(2 rows)
+
+SELECT count(*) FROM scan_test WHERE val = 50;
+psql:01_scan.sql:14: WARNING:  pg carbon generate plan failed❌, fallback to standard planner!
+ count 
+-------
+  1000
+(1 row)
+
+-- Test 2: Index Scan
+CREATE INDEX idx_scan_test_val ON scan_test(val);
+ANALYZE scan_test;
+-- Usually forcing index scan is safer for testing specific path if data is small
+SET enable_seqscan = on;
+EXPLAIN SELECT * FROM scan_test WHERE val = 50;
+psql:01_scan.sql:22: WARNING:  pg carbon generate plan success✅
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Index Scan using idx_scan_test_val on scan_test  (cost=0.00..50.07 rows=5 width=0)
+(1 row)
+
+SET enable_seqscan = off;
+EXPLAIN SELECT * FROM scan_test WHERE val = 50;
+psql:01_scan.sql:24: WARNING:  pg carbon generate plan success✅
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Index Scan using idx_scan_test_val on scan_test  (cost=0.00..50.07 rows=5 width=0)
+(1 row)
+
+SELECT count(*) FROM scan_test WHERE val = 50;
+psql:01_scan.sql:25: WARNING:  pg carbon generate plan failed❌, fallback to standard planner!
+ count 
+-------
+  1000
+(1 row)
+
+SET enable_seqscan = on;
+-- Clean up
+DROP TABLE scan_test;

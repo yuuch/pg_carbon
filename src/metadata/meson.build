@@ -1,0 +1,1 @@
+sources += files('metadata.cpp')

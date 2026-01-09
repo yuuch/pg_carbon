@@ -30,7 +30,7 @@ Plan *pg_carbon_optimize_query(Query *parse, int cursorOptions, ParamListInfo bo
 
 static PlannedStmt *pg_carbon_planner(Query *parse, const char *query_string, int cursorOptions,
                                       ParamListInfo boundParams) {
-    if (pg_carbon_enable) {
+    if (pg_carbon_enable && parse->commandType == CMD_SELECT) {
         // Call our C++ optimizer
         Plan *plan = pg_carbon_optimize_query(parse, cursorOptions, boundParams);
         if (plan) {

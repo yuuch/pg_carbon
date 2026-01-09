@@ -16,6 +16,7 @@ if ! command -v pg_config &> /dev/null; then
     POSSIBLE_LOCATIONS=(
         "../../pg_carbon_build_dir/bin"
         "../../pg_carbon_installed/bin"
+        "../postgres/pg_carbon_installed/bin"
     )
     
     for loc in "${POSSIBLE_LOCATIONS[@]}"; do

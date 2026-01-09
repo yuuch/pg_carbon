@@ -11,8 +11,13 @@ void OptInputs::perform(TaskScheduler *scheduler) {
     // 49: if childExpr is null then (All inputs optimized)
     if (static_cast<size_t>(current_input_index_) >= children.size()) {
         // 50: memo.UpdateBestPlan(expr)
-        // In our simplified model, we track the best expression in the group.
-        // Real implementation would calculate cost and compare.
+
+        // Compute Cost
+        double cost = expr_->GetOperator()->ComputeCost(nullptr, children,
+                                                        expr_); // memo passed as nullptr for now
+        expr_->SetCost(cost);
+
+        // Update Group's best expression
         expr_->GetGroup()->SetBestExpression(expr_);
 
         // 51: return

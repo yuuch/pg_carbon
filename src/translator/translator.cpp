@@ -63,8 +63,6 @@ Expression *Translator::TranslateQueryToCarbon(Query *pg_query) {
     }
 
     // 6. Projection (TargetList)
-    // We always add a projection node at the top to represent the final output
-    // targets.
     if (pg_query->targetList) {
         auto projection_op = new LogicalProjection(pg_query->targetList);
         PgVector<Expression *> children;
@@ -96,54 +94,72 @@ Plan *Translator::TranslatePlanToPG(Memo *memo, GroupExpression *best_physical_p
         return TranslatePlanToPG(memo, child_expr, pg_query);
     };
 
-    if (auto scan = dynamic_cast<PhysicalTableScan *>(op)) {
-        SeqScan *node = makeNode(SeqScan);
+    double costs = best_physical_plan->GetCost();
+    // Simplified: startup cost 0 if not tracked separately
+    double startup_cost = 0.0;
+
+    // Determine plan node and attach costs
+    Plan *plan_node = nullptr;
+
+    if (auto scan = dynamic_cast<PhysicalIndexScan *>(op)) {
+        IndexScan *node = makeNode(IndexScan);
         node->scan.scanrelid = scan->GetRtIndex();
-        // In real system, targetlist and quals would be properly set
-        // Construct TargetList from Logical Properties
+        node->indexid = scan->GetIndexOid();
+
         node->scan.plan.targetlist = NIL;
         if (best_physical_plan->GetGroup() &&
             best_physical_plan->GetGroup()->GetLogicalProperties()) {
             node->scan.plan.targetlist =
                 BuildTargetList(memo, best_physical_plan->GetGroup()->GetLogicalProperties());
         }
-        return (Plan *)node;
-    }
 
-    if (auto filter = dynamic_cast<PhysicalFilter *>(op)) {
-        Plan *child_plan = GetChildPlan(0);
-        // In PG, quals are often attached to the node itself (e.g. Scan)
-        // or we use a Result node.
-        // Simplifying: If child is Scan, attach qual. Else create Result.
-        if (child_plan && IsA(child_plan, SeqScan)) {
-            // qual is a List* in Plan, but Node* in our Operator.
-            // We must wrap the expression in a List.
-            Node *qual_copy = (Node *)copyObjectImpl(filter->GetQual());
-            ((SeqScan *)child_plan)->scan.plan.qual = list_make1(qual_copy);
-            return child_plan;
+        if (scan->GetIndexQuals()) {
+            Node *qual = (Node *)copyObjectImpl(scan->GetIndexQuals());
+            if (IsA(qual, List)) {
+                node->indexqual = (List *)qual;
+            } else {
+                node->indexqual = list_make1(qual);
+            }
         } else {
-            // Create a Result node acting as filter
-            // Result *node = makeNode(Result);
-            // node->plan.lefttree = child_plan;
-            // node->plan.qual = (List *)copyObjectImpl(filter->GetQual());
-            // node->plan.targetlist = child_plan ? child_plan->targetlist : NIL;
-            // return (Plan *)node;
+            node->indexqual = NIL;
+        }
+        node->indexorderby = NIL;
+        node->indexorderdir = ForwardScanDirection;
 
-            // Fallback: Attach to child plan's qual if possible?
-            // No, let's strictly return child_plan for now because we haven't handled
-            // creating Result nodes properly with all fields.
-            // Or just Warning and return child.
+        plan_node = (Plan *)node;
+    } else if (auto scan = dynamic_cast<PhysicalTableScan *>(op)) {
+        SeqScan *node = makeNode(SeqScan);
+        node->scan.scanrelid = scan->GetRtIndex();
+        node->scan.plan.targetlist = NIL;
+        if (best_physical_plan->GetGroup() &&
+            best_physical_plan->GetGroup()->GetLogicalProperties()) {
+            node->scan.plan.targetlist =
+                BuildTargetList(memo, best_physical_plan->GetGroup()->GetLogicalProperties());
+        }
+        plan_node = (Plan *)node;
+    } else if (auto filter = dynamic_cast<PhysicalFilter *>(op)) {
+        Plan *child_plan = GetChildPlan(0);
+        if (child_plan && (IsA(child_plan, SeqScan) || IsA(child_plan, IndexScan))) {
+            Node *qual_copy = (Node *)copyObjectImpl(filter->GetQual());
+            if (IsA(child_plan, SeqScan)) {
+                ((SeqScan *)child_plan)->scan.plan.qual = list_make1(qual_copy);
+            } else {
+                ((IndexScan *)child_plan)->scan.plan.qual = list_make1(qual_copy);
+            }
+            plan_node = child_plan;
+            // Child plan already has costs set, but filtering adds cost.
+            // We should update it.
+            // The incoming 'costs' is the total cost including filter.
+        } else {
             elog(WARNING, "Translator: PhysicalFilter text not fully implemented, "
                           "attaching to child if Scan.");
-            return child_plan;
+            plan_node = child_plan;
         }
-    }
-
-    if (auto sort = dynamic_cast<PhysicalSort *>(op)) {
+    } else if (auto sort = dynamic_cast<PhysicalSort *>(op)) {
         Plan *child_plan = GetChildPlan(0);
         Sort *node = makeNode(Sort);
         node->plan.lefttree = child_plan;
-        node->plan.targetlist = child_plan->targetlist; // Pass through tlist
+        node->plan.targetlist = child_plan->targetlist;
 
         int numCols = list_length(sort->GetSortClause());
         node->numCols = numCols;
@@ -158,7 +174,6 @@ Plan *Translator::TranslatePlanToPG(Memo *memo, GroupExpression *best_physical_p
             SortGroupClause *sgc = (SortGroupClause *)lfirst(lc);
             TargetEntry *tle = nullptr;
 
-            // Find TLE with matching ressortgroupref
             ListCell *l;
             foreach (l, pg_query->targetList) {
                 TargetEntry *candidate = (TargetEntry *)lfirst(l);
@@ -174,39 +189,46 @@ Plan *Translator::TranslatePlanToPG(Memo *memo, GroupExpression *best_physical_p
                 node->collations[i] = exprCollation((Node *)tle->expr);
                 node->nullsFirst[i] = sgc->nulls_first;
             } else {
-                elog(WARNING, "Translator: Could not find TLE for SortGroupRef %u",
-                     sgc->tleSortGroupRef);
-                node->sortColIdx[i] = 0; // Likely to crash if executed
+                node->sortColIdx[i] = 0;
             }
             i++;
         }
-
-        return (Plan *)node;
-    }
-
-    if (auto limit = dynamic_cast<PhysicalLimit *>(op)) {
+        plan_node = (Plan *)node;
+    } else if (auto limit = dynamic_cast<PhysicalLimit *>(op)) {
         Plan *child_plan = GetChildPlan(0);
         Limit *node = makeNode(Limit);
         node->plan.lefttree = child_plan;
         node->plan.targetlist = child_plan->targetlist;
         node->limitOffset = limit->GetLimitOffset();
         node->limitCount = limit->GetLimitCount();
-        return (Plan *)node;
-    }
-
-    if (auto proj = dynamic_cast<PhysicalProjection *>(op)) {
+        plan_node = (Plan *)node;
+    } else if (auto proj = dynamic_cast<PhysicalProjection *>(op)) {
         Plan *child_plan = GetChildPlan(0);
-        // If child is already a plan, we can just update its targetlist?
-        // Or create a Result node (Projection)
-        // For now, let's just update the child plan's target list if it exists.
         if (child_plan) {
             child_plan->targetlist = (List *)copyObjectImpl(proj->GetTargetList());
-            return child_plan;
+            plan_node = child_plan;
         }
-        // If no child (e.g. Result with constant), create Result.
-        // Result *node = makeNode(Result);
-        // node->plan.targetlist = (List *)copyObjectImpl(proj->GetTargetList());
-        // return (Plan *)node;
+    }
+
+    if (plan_node) {
+        plan_node->startup_cost = startup_cost;
+        plan_node->total_cost = costs;
+
+        if (best_physical_plan->GetGroup() &&
+            best_physical_plan->GetGroup()->GetLogicalProperties()) {
+            double rows = best_physical_plan->GetGroup()->GetLogicalProperties()->GetCardinality();
+            plan_node->plan_rows = rows;
+            // Simplified width calculation: 8 bytes per column? or generic 0?
+            // PG uses avg width. Let's set a default or calculate from ColSet size.
+            // For now, let's leave it 0 or set to something fixed like 4 * cols.
+            // plan_node->plan_width = ...
+        }
+
+        // Sanity check: ensure total >= startup
+        if (plan_node->total_cost < plan_node->startup_cost)
+            plan_node->total_cost = plan_node->startup_cost;
+
+        return plan_node;
     }
 
     return nullptr;
